@@ -1,0 +1,14 @@
+{
+  "name": "dataknows.me",
+  "short_name": "dataknows.me",
+  "description": "Track daily metrics about yourself. All data stays on your phone.",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#fafaf9",
+  "theme_color": "#fafaf9",
+  "icons": [
+    { "src": "icon_192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon_512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon_1024.png", "sizes": "1024x1024", "type": "image/png" }
+  ]
+}
