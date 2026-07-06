@@ -44,20 +44,23 @@ function dateToKey(d) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
-function todayEntries() {
-  const key = todayKey();
-  if (!state.entries[key]) state.entries[key] = {};
-  return state.entries[key];
+// The day whose entries are being viewed/edited; defaults to today and can
+// be moved back up to 6 days via the day strip.
+let selectedDay = todayKey();
+
+function selectedEntries() {
+  if (!state.entries[selectedDay]) state.entries[selectedDay] = {};
+  return state.entries[selectedDay];
 }
 
 function setEntry(metricId, value) {
-  todayEntries()[metricId] = value;
+  selectedEntries()[metricId] = value;
   saveState();
   render();
 }
 
 function clearEntry(metricId) {
-  delete todayEntries()[metricId];
+  delete selectedEntries()[metricId];
   saveState();
   render();
 }
@@ -67,23 +70,63 @@ function clearEntry(metricId) {
 const listEl = document.getElementById("metric-list");
 const emptyEl = document.getElementById("empty-state");
 const todayLabelEl = document.getElementById("today-label");
+const dayStripEl = document.getElementById("day-strip");
 
 let renderedDay = null;
 
 function render() {
   renderedDay = todayKey();
+  if (selectedDay > renderedDay) selectedDay = renderedDay;
 
-  const dayDate = new Date(renderedDay + "T12:00:00");
-  todayLabelEl.textContent = "Today · " + dayDate.toLocaleDateString(undefined, {
-    weekday: "short", month: "short", day: "numeric",
-  });
+  const isToday = selectedDay === renderedDay;
+  const dayDate = new Date(selectedDay + "T12:00:00");
+  todayLabelEl.textContent = (isToday ? "Today" : "Editing") + " · " +
+    dayDate.toLocaleDateString(undefined, {
+      weekday: "short", month: "short", day: "numeric",
+    });
+
+  renderDayStrip();
 
   emptyEl.hidden = state.metrics.length > 0;
   listEl.replaceChildren(...state.metrics.map(renderMetricCard));
 }
 
+/* Day strip: today on the right, going back in time to the left. Grey =
+ * nothing entered, yellow = partially entered, green = every metric entered. */
+
+function dayStatus(key) {
+  if (state.metrics.length === 0) return "none";
+  const day = state.entries[key] || {};
+  const filled = state.metrics.filter((m) => day[m.id] !== undefined).length;
+  if (filled === 0) return "none";
+  return filled === state.metrics.length ? "full" : "partial";
+}
+
+function renderDayStrip() {
+  const base = new Date(renderedDay + "T12:00:00");
+  const dots = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(base);
+    d.setDate(base.getDate() - i);
+    const key = dateToKey(d);
+    const selected = key === selectedDay;
+
+    const dot = el("button", `day-dot s-${dayStatus(key)}` + (selected ? " selected" : ""));
+    if (selected) dot.textContent = key.slice(5); // "MM-DD"
+    dot.setAttribute("aria-label", (i === 0 ? "Today, " : "") +
+      d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }));
+    dot.setAttribute("aria-pressed", String(selected));
+    dot.addEventListener("click", () => {
+      selectedDay = key;
+      render();
+    });
+    dots.push(dot);
+  }
+  dayStripEl.replaceChildren(...dots);
+}
+
 function renderMetricCard(metric) {
-  const value = state.entries[renderedDay]?.[metric.id];
+  const value = state.entries[selectedDay]?.[metric.id];
   const entered = value !== undefined;
 
   const card = el("div", "metric-card" + (entered ? " entered" : ""));
@@ -104,7 +147,8 @@ function renderMetricCard(metric) {
   else if (metric.type === "float") card.append(renderFloat(metric, value));
 
   if (entered) {
-    const clear = el("button", "clear-btn", "Clear today’s entry");
+    const clear = el("button", "clear-btn",
+      selectedDay === renderedDay ? "Clear today’s entry" : "Clear this day’s entry");
     clear.addEventListener("click", () => clearEntry(metric.id));
     card.append(clear);
   }
@@ -451,7 +495,11 @@ function toast(message) {
 /* ---------- day rollover while the page stays open ---------- */
 
 function checkRollover() {
-  if (renderedDay !== null && renderedDay !== todayKey()) render();
+  if (renderedDay !== null && renderedDay !== todayKey()) {
+    // Follow the new day unless the user had deliberately gone back in time.
+    if (selectedDay === renderedDay) selectedDay = todayKey();
+    render();
+  }
 }
 
 setInterval(checkRollover, 30 * 1000);

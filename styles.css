@@ -8,6 +8,8 @@
   --accent-soft: #eef2ff;
   --done: #059669;
   --done-soft: #ecfdf5;
+  --warn: #f5b70a;
+  --warn-text: #57420b;
   --danger: #dc2626;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
 }
@@ -23,6 +25,8 @@
     --accent-soft: #27263a;
     --done: #34d399;
     --done-soft: #16302a;
+    --warn: #d9a406;
+    --warn-text: #2b2107;
     --danger: #f87171;
     --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
   }
@@ -87,6 +91,41 @@ body {
 }
 
 .icon-btn:active { transform: scale(0.96); }
+
+/* ---------- day strip ---------- */
+
+.day-strip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 14px;
+}
+
+.day-dot {
+  height: 26px;
+  width: 26px;
+  flex: none;
+  padding: 0;
+  border: none;
+  border-radius: 99px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  transition: background-color 0.15s;
+}
+
+.day-dot.selected {
+  width: auto;
+  padding: 0 12px;
+}
+
+.day-dot.s-none { background: var(--border); color: var(--text-dim); }
+.day-dot.s-partial { background: var(--warn); color: var(--warn-text); }
+.day-dot.s-full { background: var(--done); color: #fff; }
+
+.day-dot:active { transform: scale(0.94); }
 
 /* ---------- metric cards ---------- */
 
