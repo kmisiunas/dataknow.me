@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#fafaf9" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#141413" media="(prefers-color-scheme: dark)">
+  <meta name="description" content="Read-only analysis of your dataknows.me metrics.">
+  <title>Analysis · dataknows.me</title>
+  <link rel="icon" type="image/png" sizes="128x128" href="icon_128.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <a class="icon-btn" href="index.html" aria-label="Back to entry">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M15 5l-7 7 7 7"/>
+      </svg>
+    </a>
+    <div class="app-title">
+      <h1>Analysis</h1>
+      <p id="range-label" class="today-label"></p>
+    </div>
+  </header>
+
+  <section id="summary" class="summary-card" hidden></section>
+
+  <main id="analysis-list" class="metric-list"></main>
+
+  <div id="empty-state" class="empty-state" hidden>
+    <p class="empty-title">Nothing to analyse yet</p>
+    <p class="empty-hint">Add metrics and record a few days first —<br>
+    then come back for averages, trends and calendars.</p>
+  </div>
+
+  <p class="footnote">Read-only view — nothing on this page changes your data.</p>
+
+  <script src="analysis.js"></script>
+</body>
+</html>

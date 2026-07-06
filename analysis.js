@@ -1,0 +1,402 @@
+"use strict";
+
+/* ============================================================
+ * dataknows.me — analysis page. Strictly read-only: this file
+ * never writes to localStorage.
+ * ============================================================ */
+
+const STORAGE_KEY = "dataknowsme.v1";
+const DAY_ROLLOVER_HOUR = 3;
+
+const state = (() => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+    if (parsed && Array.isArray(parsed.metrics) && typeof parsed.entries === "object") {
+      return parsed;
+    }
+  } catch (e) {
+    console.error("Could not read saved state", e);
+  }
+  return { version: 1, metrics: [], entries: {} };
+})();
+
+/* ---------- day helpers (same 3 a.m. cutoff as the entry page) ---------- */
+
+function todayKey() {
+  return dateToKey(new Date(Date.now() - DAY_ROLLOVER_HOUR * 3600 * 1000));
+}
+
+function dateToKey(d) {
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+function keyToDate(key) {
+  return new Date(key + "T12:00:00");
+}
+
+function lastNDayKeys(n) {
+  const base = keyToDate(todayKey());
+  const keys = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(base);
+    d.setDate(base.getDate() - i);
+    keys.push(dateToKey(d));
+  }
+  return keys; // oldest → newest
+}
+
+/* ---------- value & stats helpers ---------- */
+
+function rawValue(metric, key) {
+  return state.entries[key]?.[metric.id];
+}
+
+// Categories like "-2, -1, 0, 1, 2" are numeric in spirit; average them too.
+function isNumericMetric(metric) {
+  if (metric.type !== "category") return true;
+  return metric.categories.every((c) => Number.isFinite(Number(c)));
+}
+
+function numericValue(metric, key) {
+  const v = rawValue(metric, key);
+  if (v === undefined) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function mean(xs) {
+  return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+}
+
+function sampleStd(xs) {
+  if (xs.length < 2) return null;
+  const m = mean(xs);
+  return Math.sqrt(xs.reduce((a, x) => a + (x - m) ** 2, 0) / (xs.length - 1));
+}
+
+function modeOf(metric, keys) {
+  const counts = new Map();
+  for (const k of keys) {
+    const v = rawValue(metric, k);
+    if (v !== undefined) counts.set(String(v), (counts.get(String(v)) || 0) + 1);
+  }
+  let best = null;
+  for (const [v, c] of counts) if (best === null || c > best[1]) best = [v, c];
+  return best; // [value, count] or null
+}
+
+function fmt(n) {
+  if (n === null || n === undefined || !Number.isFinite(n)) return "—";
+  const a = Math.abs(n);
+  const d = a >= 100 ? 0 : a >= 10 ? 1 : 2;
+  return n.toFixed(d).replace(/\.0+$|(\.\d*?)0+$/, "$1");
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+/* ---------- series bucketing: day / week / month ---------- */
+
+function dailySeries(metric, nDays) {
+  return lastNDayKeys(nDays).map((k) => ({ label: k.slice(5), value: numericValue(metric, k) }));
+}
+
+function currentMonday() {
+  const t = keyToDate(todayKey());
+  const d = new Date(t);
+  d.setDate(t.getDate() - ((t.getDay() + 6) % 7)); // Monday-start weeks
+  return d;
+}
+
+function weeklySeries(metric, nWeeks) {
+  const thisMonday = currentMonday();
+  const today = todayKey();
+  const out = [];
+  for (let w = nWeeks - 1; w >= 0; w--) {
+    const start = new Date(thisMonday);
+    start.setDate(thisMonday.getDate() - 7 * w);
+    const vals = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      const key = dateToKey(d);
+      if (key > today) break;
+      const v = numericValue(metric, key);
+      if (v !== null) vals.push(v);
+    }
+    out.push({ label: dateToKey(start).slice(5), value: mean(vals) });
+  }
+  return out;
+}
+
+function monthlySeries(metric, nMonths) {
+  const t = keyToDate(todayKey());
+  const today = todayKey();
+  const out = [];
+  for (let m = nMonths - 1; m >= 0; m--) {
+    const first = new Date(t.getFullYear(), t.getMonth() - m, 1, 12);
+    const vals = [];
+    const d = new Date(first);
+    while (d.getMonth() === first.getMonth() && dateToKey(d) <= today) {
+      const v = numericValue(metric, dateToKey(d));
+      if (v !== null) vals.push(v);
+      d.setDate(d.getDate() + 1);
+    }
+    out.push({ label: first.toLocaleDateString(undefined, { month: "short" }), value: mean(vals) });
+  }
+  return out;
+}
+
+const SERIES_MODES = {
+  day: { label: "Day", build: (m) => dailySeries(m, 30) },
+  week: { label: "Week", build: (m) => weeklySeries(m, 12) },
+  month: { label: "Month", build: (m) => monthlySeries(m, 12) },
+};
+
+/* ---------- line chart (inline SVG, no dependencies) ---------- */
+
+function lineChartSVG(points) {
+  const present = points.filter((p) => p.value !== null);
+  if (present.length === 0) return `<p class="no-data">No entries in this range yet.</p>`;
+
+  const W = 640, H = 210, T = 14, R = 12, B = 28, L = 46;
+  let lo = Math.min(...present.map((p) => p.value));
+  let hi = Math.max(...present.map((p) => p.value));
+  if (lo === hi) { lo -= 1; hi += 1; }
+  const pad = (hi - lo) * 0.08;
+  lo -= pad; hi += pad;
+
+  const iw = W - L - R, ih = H - T - B;
+  const x = (i) => L + (points.length === 1 ? iw / 2 : (i * iw) / (points.length - 1));
+  const y = (v) => T + ((hi - v) / (hi - lo)) * ih;
+
+  let grid = "";
+  for (const v of [hi, (hi + lo) / 2, lo]) {
+    const gy = y(v).toFixed(1);
+    grid += `<line x1="${L}" y1="${gy}" x2="${W - R}" y2="${gy}" class="gridline"/>` +
+      `<text x="${L - 6}" y="${+gy + 3.5}" text-anchor="end" class="ax">${fmt(v)}</text>`;
+  }
+  if (lo < 0 && hi > 0) {
+    const zy = y(0).toFixed(1);
+    grid += `<line x1="${L}" y1="${zy}" x2="${W - R}" y2="${zy}" class="gridline" stroke-dasharray="4 3"/>`;
+  }
+
+  // Draw runs of consecutive non-null points; gaps stay gaps (never fake zeros).
+  let paths = "", dots = "", run = [];
+  const flush = () => {
+    if (run.length > 1) {
+      paths += `<path d="M${run.join("L")}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    }
+    run = [];
+  };
+  points.forEach((p, i) => {
+    if (p.value === null) { flush(); return; }
+    const px = x(i).toFixed(1), py = y(p.value).toFixed(1);
+    run.push(`${px},${py}`);
+    dots += `<circle cx="${px}" cy="${py}" r="3" fill="var(--accent)"><title>${esc(p.label)}: ${fmt(p.value)}</title></circle>`;
+  });
+  flush();
+
+  let xlabels = "";
+  const nLabels = Math.min(4, points.length);
+  for (let j = 0; j < nLabels; j++) {
+    const i = Math.round((j * (points.length - 1)) / Math.max(nLabels - 1, 1));
+    xlabels += `<text x="${x(i).toFixed(1)}" y="${H - 8}" text-anchor="middle" class="ax">${esc(points[i].label)}</text>`;
+  }
+
+  return `<svg viewBox="0 0 ${W} ${H}" role="img">${grid}${paths}${dots}${xlabels}</svg>`;
+}
+
+/* ---------- categorical bubble calendar (last 3 months) ---------- */
+
+const PALETTE = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#06b6d4", "#a855f7", "#ec4899", "#84cc16", "#f97316", "#64748b"];
+
+function categoryColor(metric, value) {
+  const i = metric.categories.indexOf(String(value));
+  return i === -1 ? "#94a3b8" : PALETTE[i % PALETTE.length];
+}
+
+function bubbleCalendarHTML(metric) {
+  const weeks = 13, cell = 18, r = 6.5, top = 20, left = 30;
+  const W = left + weeks * cell + 4, H = top + 7 * cell + 4;
+  const today = todayKey();
+  const thisMonday = currentMonday();
+
+  let cells = "", monthLabels = "", prevMonth = -1;
+  const counts = new Map();
+  for (let w = 0; w < weeks; w++) {
+    const monday = new Date(thisMonday);
+    monday.setDate(thisMonday.getDate() - (weeks - 1 - w) * 7);
+    if (monday.getMonth() !== prevMonth) {
+      monthLabels += `<text x="${left + w * cell}" y="11" class="ax">${monday.toLocaleDateString(undefined, { month: "short" })}</text>`;
+      prevMonth = monday.getMonth();
+    }
+    for (let dow = 0; dow < 7; dow++) {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + dow);
+      const key = dateToKey(d);
+      if (key > today) continue;
+      const cx = left + w * cell + cell / 2, cy = top + dow * cell + cell / 2;
+      const v = rawValue(metric, key);
+      if (v === undefined) {
+        cells += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="var(--border)" opacity="0.5"><title>${key} · no entry</title></circle>`;
+      } else {
+        counts.set(String(v), (counts.get(String(v)) || 0) + 1);
+        cells += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${categoryColor(metric, v)}"><title>${key} · ${esc(String(v))}</title></circle>`;
+      }
+    }
+  }
+
+  let dayLabels = "";
+  [["Mon", 0], ["Wed", 2], ["Fri", 4]].forEach(([name, row]) => {
+    dayLabels += `<text x="2" y="${top + row * cell + cell / 2 + 3.5}" class="ax">${name}</text>`;
+  });
+
+  const legend = metric.categories.map((c, i) => {
+    const n = counts.get(c) || 0;
+    return `<span><i class="legend-dot" style="background:${PALETTE[i % PALETTE.length]}"></i>${esc(c)}${n ? ` · ${n}` : ""}</span>`;
+  }).join("");
+
+  return `<div class="cal-wrap"><svg viewBox="0 0 ${W} ${H}" width="${W}" role="img">${monthLabels}${dayLabels}${cells}</svg></div>` +
+    `<div class="cal-legend">${legend}</div>`;
+}
+
+/* ---------- per-metric stats ---------- */
+
+function statsHTML(metric) {
+  const keys7 = lastNDayKeys(7), keys30 = lastNDayKeys(30);
+  const filled30 = keys30.filter((k) => rawValue(metric, k) !== undefined).length;
+
+  if (isNumericMetric(metric)) {
+    const nums7 = keys7.map((k) => numericValue(metric, k)).filter((v) => v !== null);
+    const nums30 = keys30.map((k) => numericValue(metric, k)).filter((v) => v !== null);
+    const avg7 = mean(nums7), avg30 = mean(nums30);
+
+    let trend = "";
+    if (avg7 !== null && avg30 !== null) {
+      const diff = avg7 - avg30;
+      const arrow = Math.abs(diff) < 0.005 ? "→" : diff > 0 ? "↑" : "↓";
+      trend = `<span class="stat-trend">${arrow} ${fmt(Math.abs(diff))} vs 30d</span>`;
+    }
+
+    return stat("7d avg", fmt(avg7), trend) +
+      stat("30d avg", fmt(avg30)) +
+      stat("30d std", avg30 === null ? "—" : "± " + fmt(sampleStd(nums30))) +
+      stat("30d filled", `${filled30}<small>/30</small>`);
+  }
+
+  // Non-numeric categories: averages are meaningless, show what dominates.
+  const top7 = modeOf(metric, keys7), top30 = modeOf(metric, keys30);
+  return stat("7d top", top7 ? esc(top7[0]) : "—") +
+    stat("30d top", top30 ? esc(top30[0]) : "—") +
+    stat("30d top share", top30 ? fmt((100 * top30[1]) / filled30) + "%" : "—") +
+    stat("30d filled", `${filled30}<small>/30</small>`);
+}
+
+function stat(label, value, extra = "") {
+  return `<div class="stat"><div class="stat-value">${value}</div><div class="stat-label">${label}</div>${extra}</div>`;
+}
+
+/* ---------- overview summary ---------- */
+
+function hasAnyEntry(key) {
+  const day = state.entries[key];
+  return !!day && Object.values(day).some((v) => v !== undefined);
+}
+
+function currentStreak() {
+  const d = keyToDate(todayKey());
+  if (!hasAnyEntry(dateToKey(d))) d.setDate(d.getDate() - 1); // today isn't over yet
+  let s = 0;
+  while (hasAnyEntry(dateToKey(d))) {
+    s++;
+    d.setDate(d.getDate() - 1);
+  }
+  return s;
+}
+
+function renderSummary() {
+  const summaryEl = document.getElementById("summary");
+  const trackedDays = Object.keys(state.entries).filter(hasAnyEntry).sort();
+  if (trackedDays.length === 0) return;
+
+  const keys30 = lastNDayKeys(30);
+  const cells = 30 * state.metrics.length;
+  let filledCells = 0;
+  for (const k of keys30) {
+    for (const m of state.metrics) if (rawValue(m, k) !== undefined) filledCells++;
+  }
+
+  summaryEl.hidden = false;
+  summaryEl.innerHTML = `<div class="stat-grid">` +
+    stat("Streak", `${currentStreak()}<small> d</small>`) +
+    stat("Days tracked", String(trackedDays.length)) +
+    stat("30d completion", cells ? fmt((100 * filledCells) / cells) + "%" : "—") +
+    stat("Since", trackedDays[0].slice(5)) +
+    `</div>`;
+}
+
+/* ---------- page render ---------- */
+
+function renderMetricCard(metric) {
+  const card = document.createElement("div");
+  card.className = "metric-card analysis-card";
+
+  const typeName = { integer: "number", category: "choice", float: "slider" }[metric.type] || metric.type;
+  card.innerHTML =
+    `<div class="metric-head"><span class="metric-name">${esc(metric.name)}</span>` +
+    `<span class="status-pill">${typeName}</span></div>` +
+    `<div class="stat-grid">${statsHTML(metric)}</div>`;
+
+  if (metric.type === "category") {
+    const cal = document.createElement("div");
+    cal.innerHTML = bubbleCalendarHTML(metric);
+    card.append(cal);
+  } else {
+    const toggle = document.createElement("div");
+    toggle.className = "avg-toggle";
+    toggle.setAttribute("role", "radiogroup");
+    toggle.setAttribute("aria-label", "Averaging period");
+
+    const chartWrap = document.createElement("div");
+    chartWrap.className = "chart-wrap";
+
+    let mode = "day";
+    const draw = () => {
+      chartWrap.innerHTML = lineChartSVG(SERIES_MODES[mode].build(metric));
+      toggle.querySelectorAll("button").forEach((b) => {
+        b.classList.toggle("selected", b.dataset.mode === mode);
+        b.setAttribute("aria-pressed", String(b.dataset.mode === mode));
+      });
+    };
+    for (const [key, m] of Object.entries(SERIES_MODES)) {
+      const btn = document.createElement("button");
+      btn.className = "avg-btn";
+      btn.dataset.mode = key;
+      btn.textContent = m.label;
+      btn.addEventListener("click", () => { mode = key; draw(); });
+      toggle.append(btn);
+    }
+    card.append(toggle, chartWrap);
+    draw();
+  }
+  return card;
+}
+
+function render() {
+  const dayDate = keyToDate(todayKey());
+  document.getElementById("range-label").textContent =
+    "As of " + dayDate.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+
+  const hasData = state.metrics.length > 0 && Object.keys(state.entries).some(hasAnyEntry);
+  document.getElementById("empty-state").hidden = hasData;
+  if (!hasData) return;
+
+  renderSummary();
+  document.getElementById("analysis-list")
+    .replaceChildren(...state.metrics.map(renderMetricCard));
+}
+
+render();

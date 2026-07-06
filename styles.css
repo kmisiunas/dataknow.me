@@ -493,6 +493,129 @@ body {
 .ghost-btn { background: var(--bg); color: var(--text); }
 .danger-btn { background: none; color: var(--danger); padding: 12px 8px; }
 
+/* ---------- analysis page ---------- */
+
+a.sheet-btn,
+a.icon-btn { text-decoration: none; }
+
+.summary-card {
+  background: var(--card);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.stat { min-width: 0; }
+
+.stat-value {
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stat-value small {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.stat-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top: 1px;
+}
+
+.stat-trend {
+  display: block;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.analysis-card .metric-head { margin-bottom: 12px; }
+
+.avg-toggle {
+  display: flex;
+  gap: 6px;
+  margin: 14px 0 6px;
+}
+
+.avg-btn {
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  background: var(--bg);
+  color: var(--text-dim);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.avg-btn.selected {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.chart-wrap svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+svg .ax {
+  fill: var(--text-dim);
+  font-size: 11px;
+  font-family: inherit;
+}
+
+svg .gridline { stroke: var(--border); }
+
+.cal-wrap {
+  margin-top: 12px;
+  overflow-x: auto;
+}
+
+.cal-wrap svg { display: block; }
+
+.cal-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.legend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 99px;
+  margin-right: 5px;
+  vertical-align: -1px;
+}
+
+.no-data {
+  color: var(--text-dim);
+  font-size: 14px;
+  margin: 8px 0;
+}
+
 /* ---------- toast ---------- */
 
 .toast {
