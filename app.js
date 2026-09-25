@@ -739,6 +739,15 @@ function checkRollover() {
   }
 }
 
+/* ---------- other tabs ---------- */
+
+// Fired only when another tab writes storage (no polling), so it costs nothing
+// otherwise. Reload so this tab never saves over the other tab's changes.
+window.addEventListener("storage", (e) => {
+  if (e.key === STORAGE_KEY || e.key === null) state = loadState();
+  if (e.key === STORAGE_KEY || e.key === META_KEY || e.key === null) render();
+});
+
 setInterval(checkRollover, 30 * 1000);
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) checkRollover();

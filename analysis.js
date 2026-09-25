@@ -6,9 +6,17 @@
  * ============================================================ */
 
 // Storage and day helpers live in common.js.
-const state = loadState();
+let state = loadState();
 // Deleted metrics keep their history but are not shown anywhere.
-const metrics = activeMetrics(state);
+let metrics = activeMetrics(state);
+
+// Follow edits made in another tab (the event fires only on changes).
+window.addEventListener("storage", (e) => {
+  if (e.key !== STORAGE_KEY && e.key !== null) return;
+  state = loadState();
+  metrics = activeMetrics(state);
+  render();
+});
 
 /* ---------- day helpers (same 3 a.m. cutoff as the entry page) ---------- */
 
@@ -362,7 +370,11 @@ function render() {
 
   const hasData = metrics.length > 0 && Object.keys(state.entries).some(hasAnyEntry);
   document.getElementById("empty-state").hidden = hasData;
-  if (!hasData) return;
+  if (!hasData) {
+    document.getElementById("summary").hidden = true;
+    document.getElementById("analysis-list").replaceChildren();
+    return;
+  }
 
   renderSummary();
   document.getElementById("analysis-list")
