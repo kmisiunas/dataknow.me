@@ -4,44 +4,13 @@
  * dataknows.me — daily self-tracking, all data in localStorage
  * ============================================================ */
 
-const STORAGE_KEY = "dataknowsme.v1";
-const DAY_ROLLOVER_HOUR = 3; // day resets at 3:00 local time
-
 /* ---------- state ---------- */
 
-// state = { version, metrics: [{id, name, type, ...}], entries: { "YYYY-MM-DD": { metricId: value } } }
+// Storage, schema, migrations and day helpers live in common.js.
 let state = loadState();
 
-function loadState() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && Array.isArray(parsed.metrics) && typeof parsed.entries === "object") {
-        return parsed;
-      }
-    }
-  } catch (e) {
-    console.error("Could not read saved state", e);
-  }
-  return { version: 1, metrics: [], entries: {} };
-}
-
-function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-}
-
-/* ---------- day handling (3 a.m. cutoff) ---------- */
-
-function todayKey() {
-  // Before 3 a.m. local time, entries still count for the previous day.
-  const d = new Date(Date.now() - DAY_ROLLOVER_HOUR * 3600 * 1000);
-  return dateToKey(d);
-}
-
-function dateToKey(d) {
-  const p = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+function save() {
+  saveState(state);
 }
 
 // The day whose entries are being viewed/edited; defaults to today and can
@@ -55,13 +24,13 @@ function selectedEntries() {
 
 function setEntry(metricId, value) {
   selectedEntries()[metricId] = value;
-  saveState();
+  save();
   render();
 }
 
 function clearEntry(metricId) {
   delete selectedEntries()[metricId];
-  saveState();
+  save();
   render();
 }
 
@@ -319,7 +288,7 @@ metricForm.addEventListener("submit", (e) => {
   } else {
     state.metrics.push(metric);
   }
-  saveState();
+  save();
   render();
 });
 
@@ -336,7 +305,7 @@ deleteBtn.addEventListener("click", () => {
   if (!confirm(`Delete “${metric.name}” and all its recorded history?`)) return;
   state.metrics = state.metrics.filter((m) => m.id !== editingId);
   for (const day of Object.values(state.entries)) delete day[editingId];
-  saveState();
+  save();
   render();
   metricDialog.close();
 });
@@ -411,8 +380,8 @@ document.getElementById("import-file").addEventListener("change", async (e) => {
       throw new Error("not a dataknows.me backup");
     }
     if (!confirm("Replace everything on this device with the backup?")) return;
-    state = { version: 1, metrics: parsed.metrics, entries: parsed.entries || {} };
-    saveState();
+    state = migrate({ ...parsed, entries: parsed.entries || {} });
+    save();
     render();
     menuDialog.close();
     toast("Backup restored.");
@@ -453,13 +422,6 @@ function csvEscape(s) {
 }
 
 /* ---------- helpers ---------- */
-
-function el(tag, className = "", text = "") {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
-  if (text !== "") node.textContent = text;
-  return node;
-}
 
 function clamp(n, min, max) {
   return Math.min(max, Math.max(min, n));

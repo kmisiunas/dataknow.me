@@ -5,35 +5,10 @@
  * never writes to localStorage.
  * ============================================================ */
 
-const STORAGE_KEY = "dataknowsme.v1";
-const DAY_ROLLOVER_HOUR = 3;
-
-const state = (() => {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
-    if (parsed && Array.isArray(parsed.metrics) && typeof parsed.entries === "object") {
-      return parsed;
-    }
-  } catch (e) {
-    console.error("Could not read saved state", e);
-  }
-  return { version: 1, metrics: [], entries: {} };
-})();
+// Storage and day helpers live in common.js.
+const state = loadState();
 
 /* ---------- day helpers (same 3 a.m. cutoff as the entry page) ---------- */
-
-function todayKey() {
-  return dateToKey(new Date(Date.now() - DAY_ROLLOVER_HOUR * 3600 * 1000));
-}
-
-function dateToKey(d) {
-  const p = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
-
-function keyToDate(key) {
-  return new Date(key + "T12:00:00");
-}
 
 function lastNDayKeys(n) {
   const base = keyToDate(todayKey());
@@ -91,10 +66,6 @@ function fmt(n) {
   const a = Math.abs(n);
   const d = a >= 100 ? 0 : a >= 10 ? 1 : 2;
   return n.toFixed(d).replace(/\.0+$|(\.\d*?)0+$/, "$1");
-}
-
-function esc(s) {
-  return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 }
 
 /* ---------- series bucketing: day / week / month ---------- */
