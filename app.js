@@ -83,8 +83,12 @@ function render() {
   renderBanner();
 
   const metrics = activeMetrics(state);
+  if (metrics.length < 2) reordering = false;
+  document.body.classList.toggle("reordering", reordering);
+  addBtn.textContent = reordering ? "Done" : "+ Add metric";
   emptyEl.hidden = metrics.length > 0;
-  listEl.replaceChildren(...metrics.map(renderMetricCard));
+  listEl.replaceChildren(...metrics.map((m, i) =>
+    reordering ? renderReorderRow(m, i, metrics.length) : renderMetricCard(m)));
 }
 
 /* Day strip: today on the right, going back in time to the left. Grey =
@@ -120,6 +124,40 @@ function renderDayStrip() {
     dots.push(dot);
   }
   dayStripEl.replaceChildren(...dots);
+}
+
+/* Reorder mode: compact rows with up/down buttons, toggled from the menu. */
+
+let reordering = false;
+
+function renderReorderRow(metric, index, count) {
+  const row = el("div", "metric-card reorder-row");
+  row.dataset.id = metric.id;
+  row.append(el("span", "metric-name", metric.name));
+  for (const [dir, symbol, label] of [[-1, "↑", "Move up"], [1, "↓", "Move down"]]) {
+    const btn = el("button", "step-btn reorder-btn", symbol);
+    btn.dataset.dir = dir;
+    btn.setAttribute("aria-label", `${label}: ${metric.name}`);
+    btn.disabled = dir < 0 ? index === 0 : index === count - 1;
+    btn.addEventListener("click", () => moveMetric(metric.id, dir));
+    row.append(btn);
+  }
+  return row;
+}
+
+// Swaps a metric with its visible neighbour; deleted metrics keep their slots.
+function moveMetric(id, dir) {
+  const visible = activeMetrics(state);
+  const j = visible.findIndex((m) => m.id === id) + dir;
+  if (j < 0 || j >= visible.length) return;
+  const a = state.metrics.findIndex((m) => m.id === id);
+  const b = state.metrics.indexOf(visible[j]);
+  [state.metrics[a], state.metrics[b]] = [state.metrics[b], state.metrics[a]];
+  save();
+  render();
+  // Keep focus on the moved metric's button so repeated taps/keys keep working.
+  const btn = listEl.querySelector(`[data-id="${CSS.escape(id)}"] [data-dir="${dir}"]`);
+  (btn && !btn.disabled ? btn : listEl.querySelector(`[data-id="${CSS.escape(id)}"] button:not(:disabled)`))?.focus();
 }
 
 function renderMetricCard(metric) {
@@ -354,7 +392,21 @@ metricForm.querySelectorAll('input[name="m-type"]').forEach((r) => {
   r.addEventListener("change", showTypeFields);
 });
 
-document.getElementById("add-metric-btn").addEventListener("click", () => openMetricDialog(null));
+const addBtn = document.getElementById("add-metric-btn");
+addBtn.addEventListener("click", () => {
+  if (reordering) {
+    reordering = false;
+    render();
+  } else {
+    openMetricDialog(null);
+  }
+});
+
+document.getElementById("reorder-btn").addEventListener("click", () => {
+  reordering = true;
+  menuDialog.close();
+  render();
+});
 
 function openMetricDialog(metric) {
   editingId = metric ? metric.id : null;
@@ -469,6 +521,7 @@ deleteBtn.addEventListener("click", () => {
 const menuDialog = document.getElementById("menu-dialog");
 document.getElementById("menu-btn").addEventListener("click", () => {
   document.getElementById("undo-restore-btn").hidden = !hasSnapshot();
+  document.getElementById("reorder-btn").hidden = activeMetrics(state).length < 2;
   document.getElementById("backup-status").textContent = backupStatusText();
   menuDialog.showModal();
 });

@@ -308,6 +308,26 @@ body {
   margin-top: 2px;
 }
 
+/* reorder mode */
+
+.reorder-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px 10px 16px;
+}
+
+.reorder-btn { width: 48px; height: 44px; font-size: 20px; }
+
+body.reordering .day-strip,
+body.reordering .banner { display: none; }
+
+body.reordering .add-btn {
+  border-style: solid;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 /* clear entry */
 
 .clear-btn {
