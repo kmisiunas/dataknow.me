@@ -658,6 +658,54 @@ svg .gridline { stroke: var(--border); }
   margin: 8px 0;
 }
 
+/* weekday pattern & relationships */
+
+.section-label {
+  margin: 16px 0 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.section-label span { font-weight: 500; text-transform: none; letter-spacing: 0; }
+
+.chart-note {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.relationships { margin-top: 12px; }
+
+.corr-list { list-style: none; margin: 0; padding: 0; }
+
+.corr-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+
+.corr-row:first-child { border-top: none; padding-top: 0; }
+
+.corr-names { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.corr-names > span { color: var(--text-dim); font-weight: 500; }
+.corr-names small { display: block; font-size: 12px; font-weight: 500; color: var(--text-dim); }
+
+.corr-bar { flex: none; }
+
+.corr-r {
+  flex: none;
+  min-width: 42px;
+  text-align: right;
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ---------- toast ---------- */
 
 .toast {

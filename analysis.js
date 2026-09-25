@@ -241,6 +241,148 @@ function bubbleCalendarHTML(metric) {
     `<div class="cal-legend">${legend}</div>`;
 }
 
+/* ---------- day-of-week pattern (numeric metrics, last 12 weeks) ---------- */
+
+const WEEKDAY_WEEKS = 12;
+const WEEKDAY_MIN_DAYS = 2; // entries needed before a weekday gets a bar
+
+// Monday-first short names in the user's locale (1 Jan 2024 was a Monday).
+const WEEKDAYS = [0, 1, 2, 3, 4, 5, 6].map((i) =>
+  new Date(2024, 0, 1 + i, 12).toLocaleDateString(undefined, { weekday: "short" }));
+
+function weekdayStats(metric) {
+  const buckets = WEEKDAYS.map(() => []);
+  const all = [];
+  for (const key of lastNDayKeys(WEEKDAY_WEEKS * 7)) {
+    const v = numericValue(metric, key);
+    if (v === null) continue;
+    buckets[(keyToDate(key).getDay() + 6) % 7].push(v);
+    all.push(v);
+  }
+  return {
+    overall: mean(all),
+    days: buckets.map((vals, i) => ({
+      name: WEEKDAYS[i],
+      n: vals.length,
+      avg: vals.length >= WEEKDAY_MIN_DAYS ? mean(vals) : null,
+    })),
+  };
+}
+
+// A bar from the baseline at y0 to y1, with only the far end rounded.
+function barPath(x, w, y0, y1, r = 4) {
+  const h = Math.abs(y1 - y0);
+  r = Math.min(r, h, w / 2);
+  if (h < 0.5) return "";
+  const up = y1 < y0, s = up ? 1 : -1;
+  return `M${x},${y0}V${y1 + s * r}Q${x},${y1} ${x + r},${y1}H${x + w - r}Q${x + w},${y1} ${x + w},${y1 + s * r}V${y0}Z`;
+}
+
+function weekdayHTML(metric) {
+  const { overall, days } = weekdayStats(metric);
+  const shown = days.filter((d) => d.avg !== null);
+  const head = `<div class="section-label">By weekday <span>· vs your ${WEEKDAY_WEEKS}-week average</span></div>`;
+  if (shown.length < 3) {
+    return head + `<p class="no-data">Needs a few more weeks of entries.</p>`;
+  }
+
+  const W = 640, H = 150, T = 12, B = 26, L = 46, R = 12;
+  const mid = T + (H - T - B) / 2, half = (H - T - B) / 2;
+  const maxDev = Math.max(...shown.map((d) => Math.abs(d.avg - overall))) || 1;
+  const slot = (W - L - R) / 7, bw = Math.min(44, slot - 2 * 8);
+
+  let bars = "", labels = "";
+  days.forEach((d, i) => {
+    const cx = L + slot * i + slot / 2;
+    labels += `<text x="${cx.toFixed(1)}" y="${H - 8}" text-anchor="middle" class="ax">${esc(d.name)}</text>`;
+    const tip = d.avg === null
+      ? `${d.name}: not enough entries (${d.n})`
+      : `${d.name}: ${fmt(d.avg)} avg (${d.avg >= overall ? "+" : "−"}${fmt(Math.abs(d.avg - overall))} vs avg, ${d.n} days)`;
+    // Full-height invisible hit target, larger than the bar.
+    bars += `<g><title>${esc(tip)}</title><rect x="${(cx - slot / 2).toFixed(1)}" y="${T}" width="${slot.toFixed(1)}" height="${H - T - B}" fill="transparent"/>`;
+    if (d.avg !== null) {
+      const y1 = mid - ((d.avg - overall) / maxDev) * half;
+      const path = barPath(+(cx - bw / 2).toFixed(1), bw, mid, +y1.toFixed(1));
+      bars += path ? `<path d="${path}" fill="var(--accent)"/>`
+        : `<line x1="${(cx - bw / 2).toFixed(1)}" x2="${(cx + bw / 2).toFixed(1)}" y1="${mid}" y2="${mid}" stroke="var(--accent)" stroke-width="2"/>`;
+    }
+    bars += `</g>`;
+  });
+
+  const axis = `<line x1="${L}" y1="${mid}" x2="${W - R}" y2="${mid}" class="gridline"/>` +
+    `<text x="${L - 6}" y="${mid + 3.5}" text-anchor="end" class="ax">${fmt(overall)}</text>`;
+
+  const hi = shown.reduce((a, b) => (b.avg > a.avg ? b : a));
+  const lo = shown.reduce((a, b) => (b.avg < a.avg ? b : a));
+  const note = hi.avg === lo.avg
+    ? "About the same every day."
+    : `Highest on ${esc(hi.name)} (${fmt(hi.avg)}), lowest on ${esc(lo.name)} (${fmt(lo.avg)}).`;
+
+  return head +
+    `<div class="chart-wrap"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Average by weekday. ${note}">` +
+    `${axis}${bars}${labels}</svg></div><p class="chart-note">${note}</p>`;
+}
+
+/* ---------- relationships between metrics (same-day correlation) ---------- */
+
+const CORR_DAYS = 90;
+const CORR_MIN_PAIRS = 10;
+const CORR_MAX_ROWS = 8;
+
+function correlations() {
+  const numeric = metrics.filter(isNumericMetric);
+  const keys = lastNDayKeys(CORR_DAYS);
+  const out = [];
+  for (let i = 0; i < numeric.length; i++) {
+    for (let j = i + 1; j < numeric.length; j++) {
+      const a = numeric[i], b = numeric[j], xs = [], ys = [];
+      for (const k of keys) {
+        const x = numericValue(a, k), y = numericValue(b, k);
+        if (x !== null && y !== null) { xs.push(x); ys.push(y); }
+      }
+      const r = xs.length >= CORR_MIN_PAIRS ? pearson(xs, ys) : null;
+      if (r !== null) out.push({ a, b, r, n: xs.length });
+    }
+  }
+  return { numericCount: numeric.length, pairs: out.sort((p, q) => Math.abs(q.r) - Math.abs(p.r)) };
+}
+
+function strengthText(r) {
+  const a = Math.abs(r);
+  if (a < 0.2) return "No clear link";
+  const word = a < 0.4 ? "Weak" : a < 0.7 ? "Moderate" : "Strong";
+  return `${word}: ${r > 0 ? "tend to rise together" : "one up, the other down"}`;
+}
+
+function corrBarSVG(r) {
+  const W = 80, H = 12, mid = W / 2, w = Math.abs(r) * (mid - 1);
+  const x = r >= 0 ? mid : mid - w;
+  return `<svg class="corr-bar" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-hidden="true">` +
+    `<rect x="0" y="${H / 2 - 1}" width="${W}" height="2" rx="1" fill="var(--border)"/>` +
+    `<rect x="${x.toFixed(1)}" y="1" width="${Math.max(w, 1.5).toFixed(1)}" height="${H - 2}" rx="3" fill="var(--accent)"/>` +
+    `<line x1="${mid}" x2="${mid}" y1="0" y2="${H}" stroke="var(--text-dim)" stroke-width="1"/></svg>`;
+}
+
+function renderRelationships() {
+  const section = document.getElementById("relationships");
+  const { numericCount, pairs } = correlations();
+  section.hidden = numericCount < 2;
+  if (section.hidden) return;
+
+  const rows = pairs.slice(0, CORR_MAX_ROWS).map((p) =>
+    `<li class="corr-row"><div class="corr-names">${esc(p.a.name)} <span>&amp;</span> ${esc(p.b.name)}` +
+    `<small>${strengthText(p.r)} · ${p.n} days</small></div>` +
+    `${corrBarSVG(p.r)}<span class="corr-r">${p.r >= 0 ? "+" : "−"}${Math.abs(p.r).toFixed(2)}</span></li>`).join("");
+
+  section.innerHTML =
+    `<div class="metric-head"><span class="metric-name">Relationships</span>` +
+    `<span class="status-pill">last ${CORR_DAYS} days</span></div>` +
+    (rows ? `<ul class="corr-list">${rows}</ul>`
+      : `<p class="no-data">Needs at least ${CORR_MIN_PAIRS} days where two number metrics were both recorded.</p>`) +
+    `<p class="chart-note">Same-day correlation (r from −1 to +1) between number metrics, using days where both ` +
+    `were recorded. A link isn’t proof that one causes the other.</p>`;
+}
+
 /* ---------- per-metric stats ---------- */
 
 function statsHTML(metric) {
@@ -360,6 +502,13 @@ function renderMetricCard(metric) {
     card.append(toggle, chartWrap);
     draw();
   }
+
+  if (isNumericMetric(metric)) {
+    const weekday = document.createElement("div");
+    weekday.className = "weekday";
+    weekday.innerHTML = weekdayHTML(metric);
+    card.append(weekday);
+  }
   return card;
 }
 
@@ -372,6 +521,7 @@ function render() {
   document.getElementById("empty-state").hidden = hasData;
   if (!hasData) {
     document.getElementById("summary").hidden = true;
+    document.getElementById("relationships").hidden = true;
     document.getElementById("analysis-list").replaceChildren();
     return;
   }
@@ -379,6 +529,7 @@ function render() {
   renderSummary();
   document.getElementById("analysis-list")
     .replaceChildren(...metrics.map(renderMetricCard));
+  renderRelationships();
 }
 
 render();

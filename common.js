@@ -207,6 +207,24 @@ function coerceValue(metric, v) {
   return n === null ? undefined : n;
 }
 
+// Pearson correlation of paired samples, or null if undefined (n < 2 or a
+// series doesn't vary).
+function pearson(xs, ys) {
+  const n = xs.length;
+  if (n < 2 || ys.length !== n) return null;
+  const mx = xs.reduce((a, b) => a + b, 0) / n;
+  const my = ys.reduce((a, b) => a + b, 0) / n;
+  let sxy = 0, sxx = 0, syy = 0;
+  for (let i = 0; i < n; i++) {
+    const dx = xs[i] - mx, dy = ys[i] - my;
+    sxy += dx * dy;
+    sxx += dx * dx;
+    syy += dy * dy;
+  }
+  if (sxx === 0 || syy === 0) return null;
+  return Math.max(-1, Math.min(1, sxy / Math.sqrt(sxx * syy)));
+}
+
 /* ---------- days (3 a.m. cutoff) ---------- */
 
 function dateToKey(d) {
@@ -257,6 +275,6 @@ if (typeof module === "object" && module.exports) {
   module.exports = {
     STORAGE_KEY, SNAPSHOT_KEY, CORRUPT_KEY, META_KEY, CURRENT_VERSION, MIGRATIONS,
     emptyState, migrate, loadState, saveState, isSaveBlocked, loadMeta, updateMeta, validateBackup,
-    activeMetrics, toNumber, coerceValue, dateToKey, keyToDate, addDays, todayKey, esc,
+    activeMetrics, toNumber, coerceValue, pearson, dateToKey, keyToDate, addDays, todayKey, esc,
   };
 }

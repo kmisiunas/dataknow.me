@@ -174,3 +174,13 @@ test("validateBackup refuses backups from a newer version", () => {
   b.version = c.CURRENT_VERSION + 1;
   assert.throws(() => c.validateBackup(b), /newer/);
 });
+
+/* ---------- stats ---------- */
+
+test("pearson", () => {
+  assert.equal(c.pearson([1, 2, 3], [2, 4, 6]), 1);
+  assert.equal(c.pearson([1, 2, 3], [3, 2, 1]), -1);
+  assert.ok(Math.abs(c.pearson([1, 2, 3, 4], [1, 3, 2, 4]) - 0.8) < 1e-9);
+  assert.equal(c.pearson([1, 1, 1], [1, 2, 3]), null);
+  assert.equal(c.pearson([1], [1]), null);
+});
