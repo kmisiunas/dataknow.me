@@ -11,7 +11,10 @@ let state = loadState();
 
 // Returns false (and tells the user) if the data could not be written.
 function save() {
-  if (saveState(state)) return true;
+  if (saveState(state)) {
+    requestPersistence();
+    return true;
+  }
   toast(isSaveBlocked()
     ? "Not saved: your data is from a newer version of this app. Reload to update."
     : "Not saved: this browser's storage is full or unavailable.", 6000);
@@ -65,6 +68,7 @@ function render() {
     });
 
   renderDayStrip();
+  renderBanner();
 
   emptyEl.hidden = state.metrics.length > 0;
   listEl.replaceChildren(...state.metrics.map(renderMetricCard));
@@ -217,6 +221,94 @@ function renderFloat(metric, value) {
   return wrap;
 }
 
+/* ---------- keeping data safe: persistence, install hint, backups ---------- */
+
+const DAY_MS = 24 * 3600 * 1000;
+const BACKUP_REMIND_DAYS = 14;
+const BACKUP_SNOOZE_DAYS = 3;
+const INSTALL_HINT_SNOOZE_DAYS = 14;
+
+// Ask the browser not to evict our storage under pressure. Chrome decides
+// silently; Firefox may ask the user, so only ask once there is data.
+let persistRequested = false;
+function requestPersistence() {
+  if (persistRequested || !navigator.storage?.persist || state.metrics.length === 0) return;
+  persistRequested = true;
+  navigator.storage.persisted()
+    .then((already) => already || navigator.storage.persist())
+    .catch((e) => console.warn("Persistent storage unavailable", e));
+}
+
+// Safari deletes data of sites not opened for 7 days — except Home Screen apps.
+function isIOSBrowserTab() {
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const standalone = navigator.standalone === true ||
+    matchMedia("(display-mode: standalone)").matches;
+  return ios && !standalone;
+}
+
+function firstEntryDay() {
+  return Object.keys(state.entries).filter((k) => Object.keys(state.entries[k]).length > 0).sort()[0];
+}
+
+function daysSince(ms) {
+  return Math.floor((Date.now() - ms) / DAY_MS);
+}
+
+function markBackedUp() {
+  updateMeta({ lastBackupAt: Date.now() });
+  render();
+}
+
+function backupStatusText() {
+  const last = loadMeta().lastBackupAt;
+  if (!last) return "No backup yet.";
+  const d = daysSince(last);
+  return "Last backup: " + (d === 0 ? "today." : d === 1 ? "yesterday." : `${d} days ago.`);
+}
+
+function backupOverdue(meta) {
+  const first = firstEntryDay();
+  if (!first) return false;
+  const since = meta.lastBackupAt ?? keyToDate(first).getTime();
+  if (daysSince(since) < BACKUP_REMIND_DAYS) return false;
+  return !meta.backupSnoozedAt || daysSince(meta.backupSnoozedAt) >= BACKUP_SNOOZE_DAYS;
+}
+
+const bannerEl = document.getElementById("banner");
+
+function renderBanner() {
+  const meta = loadMeta();
+  let text = null, snooze = null;
+
+  if (isIOSBrowserTab() && state.metrics.length > 0 &&
+      (!meta.installHintSnoozedAt || daysSince(meta.installHintSnoozedAt) >= INSTALL_HINT_SNOOZE_DAYS)) {
+    text = "Safari clears data of sites you haven’t opened for 7 days. To keep your data safe, " +
+      "tap Share → “Add to Home Screen”. The app there starts empty: download a backup here " +
+      "first, then restore it in the app.";
+    snooze = { installHintSnoozedAt: Date.now() };
+  } else if (backupOverdue(meta)) {
+    text = (meta.lastBackupAt ? backupStatusText() : "You haven’t backed up yet.") +
+      " Your data lives only on this device — save a copy somewhere safe.";
+    snooze = { backupSnoozedAt: Date.now() };
+  }
+
+  bannerEl.hidden = text === null;
+  if (text === null) return;
+
+  const backupBtn = el("button", "primary-btn banner-btn", "Back up");
+  backupBtn.addEventListener("click", () => document.getElementById("menu-btn").click());
+  const laterBtn = el("button", "ghost-btn banner-btn", "Later");
+  laterBtn.addEventListener("click", () => {
+    updateMeta(snooze);
+    render();
+  });
+  const actions = el("div", "banner-actions");
+  actions.append(backupBtn, laterBtn);
+  bannerEl.replaceChildren(el("p", "banner-text", text), actions);
+}
+
 /* ---------- metric add / edit dialog ---------- */
 
 const metricDialog = document.getElementById("metric-dialog");
@@ -339,6 +431,7 @@ deleteBtn.addEventListener("click", () => {
 const menuDialog = document.getElementById("menu-dialog");
 document.getElementById("menu-btn").addEventListener("click", () => {
   document.getElementById("undo-restore-btn").hidden = !hasSnapshot();
+  document.getElementById("backup-status").textContent = backupStatusText();
   menuDialog.showModal();
 });
 
@@ -366,6 +459,7 @@ shareBtn.addEventListener("click", async () => {
   menuDialog.close();
   try {
     await navigator.share({ files: [backupFile()], title: "dataknows.me backup" });
+    markBackedUp();
   } catch (err) {
     if (err.name !== "AbortError") {
       toast("Sharing failed — use Download JSON backup instead.");
@@ -375,6 +469,7 @@ shareBtn.addEventListener("click", async () => {
 });
 
 document.getElementById("export-json-btn").addEventListener("click", () => {
+  markBackedUp();
   download(
     JSON.stringify(state, null, 2),
     `dataknowsme-backup-${todayKey()}.json`,
@@ -558,6 +653,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 render();
+requestPersistence();
 if (isSaveBlocked()) {
   toast("Your data was saved by a newer version of this app. Reload to update — nothing will be saved until then.", 8000);
 }

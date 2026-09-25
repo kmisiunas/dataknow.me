@@ -31,6 +31,8 @@
     </button>
   </header>
 
+  <div id="banner" class="banner" role="status" hidden></div>
+
   <nav id="day-strip" class="day-strip" aria-label="Last 7 days"></nav>
 
   <main id="metric-list" class="metric-list"></main>
@@ -49,7 +51,8 @@
   <dialog id="menu-dialog" class="sheet">
     <div class="sheet-handle"></div>
     <h2>Your data</h2>
-    <p class="sheet-hint">Everything is stored only in this browser. Download backups regularly.</p>
+    <p class="sheet-hint">Everything is stored only in this browser. Download backups regularly.
+      <span id="backup-status"></span></p>
     <div class="sheet-actions">
       <a class="sheet-btn" href="analysis.html">
         <span class="sheet-btn-title">Open analysis</span>
