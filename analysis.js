@@ -315,7 +315,7 @@ function renderMetricCard(metric) {
   const typeName = { integer: "number", category: "choice", float: "slider" }[metric.type] || metric.type;
   card.innerHTML =
     `<div class="metric-head"><span class="metric-name">${esc(metric.name)}</span>` +
-    `<span class="status-pill">${typeName}</span></div>` +
+    `<span class="status-pill">${esc(typeName)}</span></div>` +
     `<div class="stat-grid">${statsHTML(metric)}</div>`;
 
   if (metric.type === "category") {

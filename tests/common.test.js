@@ -115,3 +115,62 @@ test("coerceValue fits stored values to the metric's type", () => {
   assert.equal(c.coerceValue(cat, "good"), "good");
   assert.equal(c.coerceValue(cat, undefined), undefined);
 });
+
+/* ---------- backup validation ---------- */
+
+const goodBackup = () => ({
+  version: 1,
+  metrics: [
+    { id: "a", name: "Coffee", type: "integer", min: 0, max: 20 },
+    { id: "b", name: "Mood", type: "category", categories: ["-1", "0", "1"] },
+    { id: "c", name: "Focus", type: "float", min: 0, max: 1, step: 0.05, deleted: true },
+  ],
+  entries: { "2026-01-01": { a: 2, b: "1", c: 0.5 } },
+  futureField: "kept",
+});
+
+test("validateBackup accepts a good backup and keeps unknown fields", () => {
+  const s = c.validateBackup(goodBackup());
+  assert.equal(s.metrics.length, 3);
+  assert.equal(s.metrics[2].deleted, true);
+  assert.deepEqual(s.entries, goodBackup().entries);
+  assert.equal(s.futureField, "kept");
+});
+
+test("validateBackup rejects files that aren't backups", () => {
+  for (const bad of [null, [], {}, { metrics: [] }, { metrics: [], entries: [] }]) {
+    assert.throws(() => c.validateBackup(bad), /Not a dataknows.me backup/);
+  }
+});
+
+test("validateBackup rejects unusable metric definitions", () => {
+  const cases = [
+    [(b) => { delete b.metrics[1].categories; }, /invalid options/],
+    [(b) => { b.metrics[0].max = -1; }, /invalid range/],
+    [(b) => { b.metrics[2].step = 0; }, /invalid step/],
+    [(b) => { b.metrics[0].type = "<img src=x>"; }, /unknown type/],
+    [(b) => { b.metrics[1].id = "a"; }, /repeats an id/],
+    [(b) => { b.metrics[0].id = 5; }, /no id/],
+  ];
+  for (const [mutate, msg] of cases) {
+    const b = goodBackup();
+    mutate(b);
+    assert.throws(() => c.validateBackup(b), msg);
+  }
+});
+
+test("validateBackup drops bad entry values and day keys", () => {
+  const b = goodBackup();
+  b.entries = {
+    "2026-01-02": { a: null, b: { x: 1 }, c: NaN },
+    "not-a-day": { a: 1 },
+    "2026-01-03": { a: 3, zzz: "kept for unknown metric" },
+  };
+  assert.deepEqual(c.validateBackup(b).entries, { "2026-01-03": { a: 3, zzz: "kept for unknown metric" } });
+});
+
+test("validateBackup refuses backups from a newer version", () => {
+  const b = goodBackup();
+  b.version = c.CURRENT_VERSION + 1;
+  assert.throws(() => c.validateBackup(b), /newer/);
+});

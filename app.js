@@ -337,7 +337,10 @@ deleteBtn.addEventListener("click", () => {
 /* ---------- menu: export / import ---------- */
 
 const menuDialog = document.getElementById("menu-dialog");
-document.getElementById("menu-btn").addEventListener("click", () => menuDialog.showModal());
+document.getElementById("menu-btn").addEventListener("click", () => {
+  document.getElementById("undo-restore-btn").hidden = !hasSnapshot();
+  menuDialog.showModal();
+});
 
 document.querySelectorAll("[data-close]").forEach((btn) => {
   btn.addEventListener("click", () => btn.closest("dialog").close());
@@ -398,22 +401,74 @@ document.getElementById("import-file").addEventListener("change", async (e) => {
   const file = e.target.files[0];
   e.target.value = "";
   if (!file) return;
+
+  let restored;
   try {
-    const parsed = JSON.parse(await file.text());
-    if (!parsed || !Array.isArray(parsed.metrics) || typeof parsed.entries !== "object") {
-      throw new Error("not a dataknows.me backup");
-    }
-    if (!confirm("Replace everything on this device with the backup?")) return;
-    state = migrate({ ...parsed, entries: parsed.entries || {} });
-    save();
-    render();
-    menuDialog.close();
-    toast("Backup restored.");
+    restored = validateBackup(JSON.parse(await file.text()));
   } catch (err) {
-    toast("Could not read that file — is it a dataknows.me backup?");
     console.error(err);
+    toast(err instanceof SyntaxError
+      ? "Could not read that file — is it a dataknows.me backup?"
+      : `Can’t restore: ${err.message}`, 6000);
+    return;
   }
+
+  const days = Object.keys(restored.entries).length;
+  const shown = activeMetrics(restored).length;
+  if (!confirm(`Replace everything on this device with this backup ` +
+    `(${shown} metric${shown === 1 ? "" : "s"}, ${days} day${days === 1 ? "" : "s"})?\n\n` +
+    `Your current data is kept so the restore can be undone.`)) return;
+
+  // Keep a copy of the current data first; never restore without one.
+  try {
+    localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(state));
+  } catch (err) {
+    console.error(err);
+    toast("Can’t restore: no room to keep a copy of your current data.", 6000);
+    return;
+  }
+
+  const previous = state;
+  state = restored;
+  if (!save()) {
+    state = previous;
+    return;
+  }
+  render();
+  menuDialog.close();
+  toast("Backup restored.", 8000, { label: "Undo", run: undoRestore });
 });
+
+function hasSnapshot() {
+  try {
+    return localStorage.getItem(SNAPSHOT_KEY) !== null;
+  } catch (e) {
+    return false;
+  }
+}
+
+function undoRestore() {
+  let snapshot;
+  try {
+    snapshot = migrate(JSON.parse(localStorage.getItem(SNAPSHOT_KEY)));
+  } catch (err) {
+    console.error(err);
+    toast("Could not read the saved copy.");
+    return;
+  }
+  const previous = state;
+  state = snapshot;
+  if (!save()) {
+    state = previous;
+    return;
+  }
+  localStorage.removeItem(SNAPSHOT_KEY);
+  render();
+  menuDialog.close();
+  toast("Restore undone — your previous data is back.");
+}
+
+document.getElementById("undo-restore-btn").addEventListener("click", undoRestore);
 
 /* ---------- CSV ---------- */
 
@@ -470,9 +525,18 @@ function download(content, filename, mime) {
 }
 
 let toastTimer = null;
-function toast(message, ms = 3000) {
+// action = { label, run } adds a button (e.g. Undo) to the toast.
+function toast(message, ms = 3000, action = null) {
   const t = document.getElementById("toast");
-  t.textContent = message;
+  t.replaceChildren(el("span", "", message));
+  if (action) {
+    const btn = el("button", "toast-action", action.label);
+    btn.addEventListener("click", () => {
+      t.hidden = true;
+      action.run();
+    });
+    t.append(btn);
+  }
   t.hidden = false;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { t.hidden = true; }, ms);

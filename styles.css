@@ -633,4 +633,21 @@ svg .gridline { stroke: var(--border); }
   z-index: 50;
   max-width: 90vw;
   text-align: center;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.toast[hidden] { display: none; }
+
+.toast-action {
+  border: none;
+  background: none;
+  color: var(--accent-soft);
+  font: inherit;
+  font-weight: 700;
+  padding: 4px 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
