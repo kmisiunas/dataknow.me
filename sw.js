@@ -33,7 +33,9 @@ self.addEventListener("fetch", (event) => {
 
 async function networkFirst(req) {
   const cache = await caches.open(CACHE);
-  const network = fetch(req).then((res) => {
+  // "no-cache" revalidates with the server (a tiny 304 when unchanged), so the
+  // HTTP cache can't hand out an old app.js next to a new index.html.
+  const network = fetch(req, { cache: "no-cache" }).then((res) => {
     if (res.ok) cache.put(req, res.clone());
     return res;
   });
