@@ -41,6 +41,9 @@
 
 html { -webkit-text-size-adjust: 100%; }
 
+/* The hidden attribute must win over component display rules (e.g. flex). */
+[hidden] { display: none !important; }
+
 body {
   margin: 0 auto;
   max-width: 520px;
@@ -727,8 +730,6 @@ svg .gridline { stroke: var(--border); }
   align-items: center;
   gap: 14px;
 }
-
-.toast[hidden] { display: none; }
 
 .toast-action {
   border: none;
