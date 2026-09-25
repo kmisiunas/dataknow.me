@@ -30,14 +30,11 @@ function rawValue(metric, key) {
 // Categories like "-2, -1, 0, 1, 2" are numeric in spirit; average them too.
 function isNumericMetric(metric) {
   if (metric.type !== "category") return true;
-  return metric.categories.every((c) => Number.isFinite(Number(c)));
+  return metric.categories.every((c) => toNumber(c) !== null);
 }
 
 function numericValue(metric, key) {
-  const v = rawValue(metric, key);
-  if (v === undefined) return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
+  return toNumber(rawValue(metric, key));
 }
 
 function mean(xs) {

@@ -9,8 +9,18 @@
 // Storage, schema, migrations and day helpers live in common.js.
 let state = loadState();
 
+// Returns false (and tells the user) if the data could not be written.
 function save() {
-  saveState(state);
+  if (saveState(state)) return true;
+  toast(isSaveBlocked()
+    ? "Not saved: your data is from a newer version of this app. Reload to update."
+    : "Not saved: this browser's storage is full or unavailable.", 6000);
+  return false;
+}
+
+// The stored value for a metric on a day, as its current type expects it.
+function valueFor(metric, day) {
+  return coerceValue(metric, state.entries[day]?.[metric.id]);
 }
 
 // The day whose entries are being viewed/edited; defaults to today and can
@@ -66,7 +76,7 @@ function render() {
 function dayStatus(key) {
   if (state.metrics.length === 0) return "none";
   const day = state.entries[key] || {};
-  const filled = state.metrics.filter((m) => day[m.id] !== undefined).length;
+  const filled = state.metrics.filter((m) => coerceValue(m, day[m.id]) !== undefined).length;
   if (filled === 0) return "none";
   return filled === state.metrics.length ? "full" : "partial";
 }
@@ -95,7 +105,7 @@ function renderDayStrip() {
 }
 
 function renderMetricCard(metric) {
-  const value = state.entries[selectedDay]?.[metric.id];
+  const value = valueFor(metric, selectedDay);
   const entered = value !== undefined;
 
   const card = el("div", "metric-card" + (entered ? " entered" : ""));
@@ -257,7 +267,9 @@ function openMetricDialog(metric) {
   document.getElementById("m-float-max").value = metric?.type === "float" ? metric.max : 1;
   document.getElementById("m-float-step").value = metric?.type === "float" ? metric.step : 0.05;
 
-  document.getElementById("form-error").hidden = true;
+  const err = document.getElementById("form-error");
+  err.hidden = true;
+  delete err.dataset.confirmed;
   showTypeFields();
   metricDialog.showModal();
 }
@@ -283,6 +295,18 @@ metricForm.addEventListener("submit", (e) => {
   }
 
   if (editingId) {
+    const old = state.metrics.find((m) => m.id === editingId);
+    if (old.type !== metric.type) {
+      // Entries that don't fit the new type are kept but hidden; say so once.
+      const misfits = Object.values(state.entries).filter((day) =>
+        day[metric.id] !== undefined && coerceValue(metric, day[metric.id]) === undefined).length;
+      const warning = `${misfits} recorded ${misfits === 1 ? "entry doesn’t" : "entries don’t"} fit the new type and will be hidden (they stay in backups, and reappear if you switch back). Tap Save again to confirm.`;
+      const err = document.getElementById("form-error");
+      if (misfits > 0 && !(err.dataset.confirmed === metric.type && !err.hidden)) {
+        err.dataset.confirmed = metric.type;
+        return invalid(e, warning);
+      }
+    }
     const i = state.metrics.findIndex((m) => m.id === editingId);
     state.metrics[i] = metric;
   } else {
@@ -446,12 +470,12 @@ function download(content, filename, mime) {
 }
 
 let toastTimer = null;
-function toast(message) {
+function toast(message, ms = 3000) {
   const t = document.getElementById("toast");
   t.textContent = message;
   t.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { t.hidden = true; }, 3000);
+  toastTimer = setTimeout(() => { t.hidden = true; }, ms);
 }
 
 /* ---------- day rollover while the page stays open ---------- */
@@ -470,3 +494,6 @@ document.addEventListener("visibilitychange", () => {
 });
 
 render();
+if (isSaveBlocked()) {
+  toast("Your data was saved by a newer version of this app. Reload to update — nothing will be saved until then.", 8000);
+}
