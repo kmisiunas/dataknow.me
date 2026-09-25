@@ -397,30 +397,7 @@ body.reordering .add-btn {
 
 .sheet::backdrop { background: rgba(0, 0, 0, 0.45); }
 
-.sheet-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 0 -8px 4px 0;
-}
-
-.sheet h2 { margin: 0; font-size: 19px; }
-
-.sheet-x {
-  width: 36px;
-  height: 36px;
-  flex: none;
-  display: grid;
-  place-items: center;
-  border: none;
-  border-radius: 99px;
-  background: var(--bg);
-  color: var(--text-dim);
-  cursor: pointer;
-}
-
-.sheet-x:active { transform: scale(0.94); }
+.sheet h2 { margin: 0 0 4px; font-size: 19px; }
 
 .sheet-hint {
   margin: 0 0 16px;
