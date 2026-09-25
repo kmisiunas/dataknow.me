@@ -392,20 +392,35 @@ body.reordering .add-btn {
   border-radius: 20px 20px 0 0;
   background: var(--card);
   color: var(--text);
-  padding: 10px 20px calc(20px + env(safe-area-inset-bottom));
+  padding: 16px 20px calc(20px + env(safe-area-inset-bottom));
 }
 
 .sheet::backdrop { background: rgba(0, 0, 0, 0.45); }
 
-.sheet-handle {
-  width: 36px;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--border);
-  margin: 0 auto 14px;
+.sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 -8px 4px 0;
 }
 
-.sheet h2 { margin: 0 0 4px; font-size: 19px; }
+.sheet h2 { margin: 0; font-size: 19px; }
+
+.sheet-x {
+  width: 36px;
+  height: 36px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 99px;
+  background: var(--bg);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.sheet-x:active { transform: scale(0.94); }
 
 .sheet-hint {
   margin: 0 0 16px;
