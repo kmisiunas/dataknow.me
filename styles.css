@@ -32,7 +32,12 @@
   }
 }
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+  /* Quick repeated taps (e.g. on + / −) must not trigger double-tap zoom on
+     iOS; pinch-zoom still works. */
+  touch-action: manipulation;
+}
 
 html { -webkit-text-size-adjust: 100%; }
 

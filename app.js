@@ -233,6 +233,7 @@ function renderCategory(metric, value) {
   const wrap = el("div", "chips");
   for (const option of metric.categories) {
     const chip = el("button", "chip" + (value === option ? " selected" : ""), option);
+    chip.setAttribute("aria-pressed", String(value === option));
     chip.addEventListener("click", () => {
       if (value === option) clearEntry(metric.id);
       else setEntry(metric.id, option);

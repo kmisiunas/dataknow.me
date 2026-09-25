@@ -335,7 +335,7 @@ function renderMetricCard(metric) {
   } else {
     const toggle = document.createElement("div");
     toggle.className = "avg-toggle";
-    toggle.setAttribute("role", "radiogroup");
+    toggle.setAttribute("role", "group");
     toggle.setAttribute("aria-label", "Averaging period");
 
     const chartWrap = document.createElement("div");
