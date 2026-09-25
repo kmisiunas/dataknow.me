@@ -61,12 +61,26 @@ function clearEntry(metricId) {
 
 /* ---------- rendering ---------- */
 
+// Everything render() needs is declared here, and the first render happens
+// right away — before any buttons are wired up — so a failure further down
+// (e.g. an old cached script next to newer HTML) can't leave the screen blank.
+
 const listEl = document.getElementById("metric-list");
 const emptyEl = document.getElementById("empty-state");
 const todayLabelEl = document.getElementById("today-label");
 const dayStripEl = document.getElementById("day-strip");
+const bannerEl = document.getElementById("banner");
+const addBtn = document.getElementById("add-metric-btn");
+
+const DAY_MS = 24 * 3600 * 1000;
+const BACKUP_REMIND_DAYS = 14;
+const BACKUP_SNOOZE_DAYS = 3;
+const INSTALL_HINT_SNOOZE_DAYS = 14;
 
 let renderedDay = null;
+let reordering = false;
+
+render();
 
 function render() {
   renderedDay = todayKey();
@@ -127,8 +141,6 @@ function renderDayStrip() {
 }
 
 /* Reorder mode: compact rows with up/down buttons, toggled from the menu. */
-
-let reordering = false;
 
 function renderReorderRow(metric, index, count) {
   const row = el("div", "metric-card reorder-row");
@@ -276,11 +288,6 @@ function renderFloat(metric, value) {
 
 /* ---------- keeping data safe: persistence, install hint, backups ---------- */
 
-const DAY_MS = 24 * 3600 * 1000;
-const BACKUP_REMIND_DAYS = 14;
-const BACKUP_SNOOZE_DAYS = 3;
-const INSTALL_HINT_SNOOZE_DAYS = 14;
-
 // Ask the browser not to evict our storage under pressure. Chrome decides
 // silently; Firefox may ask the user, so only ask once there is data.
 let persistRequested = false;
@@ -328,8 +335,6 @@ function backupOverdue(meta) {
   if (daysSince(since) < BACKUP_REMIND_DAYS) return false;
   return !meta.backupSnoozedAt || daysSince(meta.backupSnoozedAt) >= BACKUP_SNOOZE_DAYS;
 }
-
-const bannerEl = document.getElementById("banner");
 
 function renderBanner() {
   const meta = loadMeta();
@@ -393,7 +398,6 @@ metricForm.querySelectorAll('input[name="m-type"]').forEach((r) => {
   r.addEventListener("change", showTypeFields);
 });
 
-const addBtn = document.getElementById("add-metric-btn");
 addBtn.addEventListener("click", () => {
   if (reordering) {
     reordering = false;
@@ -750,7 +754,6 @@ document.addEventListener("visibilitychange", () => {
   if (!document.hidden) checkRollover();
 });
 
-render();
 requestPersistence();
 if (isSaveBlocked()) {
   toast("Your data was saved by a newer version of this app. Reload to update — nothing will be saved until then.", 8000);
