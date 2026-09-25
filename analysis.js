@@ -7,6 +7,8 @@
 
 // Storage and day helpers live in common.js.
 const state = loadState();
+// Deleted metrics keep their history but are not shown anywhere.
+const metrics = activeMetrics(state);
 
 /* ---------- day helpers (same 3 a.m. cutoff as the entry page) ---------- */
 
@@ -271,7 +273,7 @@ function stat(label, value, extra = "") {
 
 function hasAnyEntry(key) {
   const day = state.entries[key];
-  return !!day && Object.values(day).some((v) => v !== undefined);
+  return !!day && metrics.some((m) => day[m.id] !== undefined);
 }
 
 function currentStreak() {
@@ -291,10 +293,10 @@ function renderSummary() {
   if (trackedDays.length === 0) return;
 
   const keys30 = lastNDayKeys(30);
-  const cells = 30 * state.metrics.length;
+  const cells = 30 * metrics.length;
   let filledCells = 0;
   for (const k of keys30) {
-    for (const m of state.metrics) if (rawValue(m, k) !== undefined) filledCells++;
+    for (const m of metrics) if (rawValue(m, k) !== undefined) filledCells++;
   }
 
   summaryEl.hidden = false;
@@ -358,13 +360,13 @@ function render() {
   document.getElementById("range-label").textContent =
     "As of " + dayDate.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 
-  const hasData = state.metrics.length > 0 && Object.keys(state.entries).some(hasAnyEntry);
+  const hasData = metrics.length > 0 && Object.keys(state.entries).some(hasAnyEntry);
   document.getElementById("empty-state").hidden = hasData;
   if (!hasData) return;
 
   renderSummary();
   document.getElementById("analysis-list")
-    .replaceChildren(...state.metrics.map(renderMetricCard));
+    .replaceChildren(...metrics.map(renderMetricCard));
 }
 
 render();

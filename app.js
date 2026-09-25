@@ -42,9 +42,21 @@ function setEntry(metricId, value) {
 }
 
 function clearEntry(metricId) {
+  const day = selectedDay;
+  const previous = state.entries[day]?.[metricId];
   delete selectedEntries()[metricId];
-  save();
+  if (!save()) return;
   render();
+  if (previous !== undefined) {
+    toast("Entry cleared.", 5000, {
+      label: "Undo",
+      run: () => {
+        (state.entries[day] ??= {})[metricId] = previous;
+        save();
+        render();
+      },
+    });
+  }
 }
 
 /* ---------- rendering ---------- */
@@ -70,19 +82,21 @@ function render() {
   renderDayStrip();
   renderBanner();
 
-  emptyEl.hidden = state.metrics.length > 0;
-  listEl.replaceChildren(...state.metrics.map(renderMetricCard));
+  const metrics = activeMetrics(state);
+  emptyEl.hidden = metrics.length > 0;
+  listEl.replaceChildren(...metrics.map(renderMetricCard));
 }
 
 /* Day strip: today on the right, going back in time to the left. Grey =
  * nothing entered, yellow = partially entered, green = every metric entered. */
 
 function dayStatus(key) {
-  if (state.metrics.length === 0) return "none";
+  const metrics = activeMetrics(state);
+  if (metrics.length === 0) return "none";
   const day = state.entries[key] || {};
-  const filled = state.metrics.filter((m) => coerceValue(m, day[m.id]) !== undefined).length;
+  const filled = metrics.filter((m) => coerceValue(m, day[m.id]) !== undefined).length;
   if (filled === 0) return "none";
-  return filled === state.metrics.length ? "full" : "partial";
+  return filled === metrics.length ? "full" : "partial";
 }
 
 function renderDayStrip() {
@@ -232,7 +246,7 @@ const INSTALL_HINT_SNOOZE_DAYS = 14;
 // silently; Firefox may ask the user, so only ask once there is data.
 let persistRequested = false;
 function requestPersistence() {
-  if (persistRequested || !navigator.storage?.persist || state.metrics.length === 0) return;
+  if (persistRequested || !navigator.storage?.persist || activeMetrics(state).length === 0) return;
   persistRequested = true;
   navigator.storage.persisted()
     .then((already) => already || navigator.storage.persist())
@@ -282,7 +296,7 @@ function renderBanner() {
   const meta = loadMeta();
   let text = null, snooze = null;
 
-  if (isIOSBrowserTab() && state.metrics.length > 0 &&
+  if (isIOSBrowserTab() && activeMetrics(state).length > 0 &&
       (!meta.installHintSnoozedAt || daysSince(meta.installHintSnoozedAt) >= INSTALL_HINT_SNOOZE_DAYS)) {
     text = "Safari clears data of sites you haven’t opened for 7 days. To keep your data safe, " +
       "tap Share → “Add to Home Screen”. The app there starts empty: download a backup here " +
@@ -402,11 +416,24 @@ metricForm.addEventListener("submit", (e) => {
     const i = state.metrics.findIndex((m) => m.id === editingId);
     state.metrics[i] = metric;
   } else {
-    state.metrics.push(metric);
+    // Re-adding a deleted metric's name brings it back with its history
+    // (days while it was deleted simply stay empty).
+    const i = state.metrics.findIndex((m) => m.deleted && sameName(m.name, name));
+    if (i !== -1) {
+      metric.id = state.metrics[i].id;
+      state.metrics[i] = metric;
+      toast(`“${name}” is back, with its earlier history.`, 5000);
+    } else {
+      state.metrics.push(metric);
+    }
   }
   save();
   render();
 });
+
+function sameName(a, b) {
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
 
 function invalid(e, message) {
   // Shown inline: a toast would be hidden behind the dialog backdrop.
@@ -416,14 +443,25 @@ function invalid(e, message) {
   err.hidden = false;
 }
 
+// Deleting only hides the metric: its recorded history is kept, and comes
+// back if the deletion is undone or a metric with the same name is added.
 deleteBtn.addEventListener("click", () => {
   const metric = state.metrics.find((m) => m.id === editingId);
-  if (!confirm(`Delete “${metric.name}” and all its recorded history?`)) return;
-  state.metrics = state.metrics.filter((m) => m.id !== editingId);
-  for (const day of Object.values(state.entries)) delete day[editingId];
-  save();
-  render();
+  metric.deleted = true;
   metricDialog.close();
+  if (!save()) {
+    delete metric.deleted;
+    return;
+  }
+  render();
+  toast(`Deleted “${metric.name}”. Its history is kept.`, 6000, {
+    label: "Undo",
+    run: () => {
+      delete metric.deleted;
+      save();
+      render();
+    },
+  });
 });
 
 /* ---------- menu: export / import ---------- */
@@ -570,19 +608,20 @@ document.getElementById("undo-restore-btn").addEventListener("click", undoRestor
 function buildCsv() {
   // Rows cover every day from the first entry to today; a blank cell means
   // nothing was entered for that metric on that day (never assume zero).
+  const metrics = activeMetrics(state);
   const days = Object.keys(state.entries)
-    .filter((k) => Object.keys(state.entries[k]).length > 0)
+    .filter((k) => metrics.some((m) => state.entries[k][m.id] !== undefined))
     .sort();
-  if (days.length === 0 || state.metrics.length === 0) return null;
+  if (days.length === 0) return null;
 
-  const header = ["date", ...state.metrics.map((m) => csvEscape(m.name))].join(",");
+  const header = ["date", ...metrics.map((m) => csvEscape(m.name))].join(",");
   const rows = [header];
 
   const cursor = new Date(days[0] + "T12:00:00");
   const last = todayKey();
   for (let key = dateToKey(cursor); key <= last; cursor.setDate(cursor.getDate() + 1), key = dateToKey(cursor)) {
     const day = state.entries[key] || {};
-    const cells = state.metrics.map((m) => {
+    const cells = metrics.map((m) => {
       const v = day[m.id];
       return v === undefined ? "" : csvEscape(String(v));
     });
