@@ -531,10 +531,6 @@ document.querySelectorAll("[data-close]").forEach((btn) => {
   btn.addEventListener("click", () => btn.closest("dialog").close());
 });
 
-// Web Share with files needs canShare support (iOS 15+, Safari/Chrome on
-// macOS); the button stays hidden elsewhere and downloads remain the fallback.
-const shareBtn = document.getElementById("share-json-btn");
-
 function backupFile() {
   return new File(
     [JSON.stringify(state, null, 2)],
@@ -543,31 +539,30 @@ function backupFile() {
   );
 }
 
-if (navigator.canShare && navigator.canShare({ files: [backupFile()] })) {
-  shareBtn.hidden = false;
+// Where file sharing works (iOS 15+, Safari/Chrome on macOS) the share sheet
+// covers both saving (Save to Files) and sending (AirDrop, mail…); elsewhere
+// the backup is downloaded.
+const canShareFiles = !!navigator.canShare?.({ files: [backupFile()] });
+if (canShareFiles) {
+  document.getElementById("export-json-sub").textContent =
+    "Full history — save to Files, AirDrop or send";
 }
 
-shareBtn.addEventListener("click", async () => {
+document.getElementById("export-json-btn").addEventListener("click", async () => {
   menuDialog.close();
-  try {
-    await navigator.share({ files: [backupFile()], title: "dataknows.me backup" });
-    markBackedUp();
-  } catch (err) {
-    if (err.name !== "AbortError") {
-      toast("Sharing failed — use Download JSON backup instead.");
-      console.error(err);
+  const file = backupFile();
+  if (canShareFiles) {
+    try {
+      await navigator.share({ files: [file], title: "dataknows.me backup" });
+      markBackedUp();
+      return;
+    } catch (err) {
+      if (err.name === "AbortError") return;
+      console.error("Sharing failed; downloading instead", err);
     }
   }
-});
-
-document.getElementById("export-json-btn").addEventListener("click", () => {
+  download(file, file.name);
   markBackedUp();
-  download(
-    JSON.stringify(state, null, 2),
-    `dataknowsme-backup-${todayKey()}.json`,
-    "application/json",
-  );
-  menuDialog.close();
 });
 
 document.getElementById("export-csv-btn").addEventListener("click", () => {
@@ -704,7 +699,8 @@ function newId() {
 }
 
 function download(content, filename, mime) {
-  const url = URL.createObjectURL(new Blob([content], { type: mime }));
+  const blob = content instanceof Blob ? content : new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
