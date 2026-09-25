@@ -247,6 +247,12 @@ function esc(s) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+/* ---------- offline support ---------- */
+
+if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js").catch((e) => console.warn("No offline support", e));
+}
+
 if (typeof module === "object" && module.exports) {
   module.exports = {
     STORAGE_KEY, SNAPSHOT_KEY, CORRUPT_KEY, META_KEY, CURRENT_VERSION, MIGRATIONS,
